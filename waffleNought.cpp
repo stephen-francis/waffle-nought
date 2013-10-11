@@ -1,27 +1,16 @@
 
-
-/*
- *This program generates an RTK file in the directory where you store
- *the .exe file. It will be named RTKFile.txt. To generate an RTKFile
- *for a given embedding, enter the n value for Kn, the num sheets,
- *and assign a sheet number for all interior edges as prompted. Edges
- *can't be assigned to non-existent sheets or sheets where a conflicting
- *edge exists.
- *Additionally, this code can be used to generate book representations
- *for complete graphs of a given sheet number.
- *
- */
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <cstdlib>
 #include <math.h>
+#include <string>
+#include <list>
 #include <iostream>
 #include <fstream>
-#include <list>
-#include <string>
 #include <sstream>
-using namespace std;
 
+using namespace std;
 //this is our EDGE object definition
 //for any given edge, we need its begin and end points,
 //sheet#, as well as the set of edges that intersect it
@@ -31,8 +20,7 @@ struct EDGE
 	int originPoint;
 	int endPoint;
     int sheetNumber;
-    std::list<EDGE*>intersectingEdges;
-    std::list<EDGE*>cooperatingEdges;
+    list<EDGE*>intersectingEdges;
 };
 //SHEET object definition
 //each sheet has a list of edges it contains
@@ -48,297 +36,291 @@ struct SHEET
 struct BOOK
 {
     list<SHEET*>sheetsInBook;
+    list<SHEET>sheetsInBookStorage;
     int sheetNumber;
 };
+int numVertices, numInteriorEdges, numSheets, maxEdgesPerSheet;
+stringstream fileOutputStream;
 
-//evaluates a list of generated sheets and disposes of invalid ones
-void discardInvalidSheets(list<EDGE*> allSheets[], int sheetCount);
+int validEmbedCount = 0;
+int masterSheetCount = 0;
+int outputCount = 0;
+int totalEmbeddings = 0;
+int totalLevels;
+//stores sizes for given distributions.. K_6 1233 would be 9,21,14,14 9 sheets w/1 edge, 21 sheets 2 edges, etc.
+int sizes [35];
+//holds sizes for given edge distributions.. K_6 has 9 edges with 1 edge, for ex
+int distribution[7];
+int numValidPartitions = 0;
+int validPartitions[1000];
+int onePartitionArray[35];
 
-//determines if the given edge intersects with any edges in given set
-bool checkForIntersectionsBetweenEdgeAndSet(EDGE oneEdge, list<EDGE*> setOfEdges);
+EDGE allEDGEs[45];
+EDGE interiorEDGEsForOneGraph[35];
+SHEET allMySheets[20000];
+SHEET sheetsForIteration[2000];
+SHEET outputList [54];
+SHEET masterSheetList [10000];
+BOOK validEmbeddings [5000];
+int numSheetsForIteration = 0;
 
-//gets an upper bound on the number of edges in a sheet
-int determineMaxEdgesPerSheet(EDGE interiorEdges[], int numInteriorEdges, int sheetNum);
 
-//combines all valid sheets in all possible ways for given sheet number
-void crunchEmbeddingCombinations(SHEET mySheets[], int numValidSheets);
 
-std::ostream& operator << (std::ostream &o, SHEET &a);
-void buildSheets(list<EDGE*> validSheets[], int numValidSheets);
-bool determineIfTwoSheetsCooperate(list<EDGE*> sheetOne, list<EDGE*> sheetTwo);
+void integerPartition(int n, int * a, int level);
+void print(int n, int * a);
+void findPartitionsOfSheetNumLength(int n, int * a, int sheetNum);
+void iteration (int currentLevel);
+int mapLevelToIndex (int level, int offset);
+void dumpOutputList (int level, int offset);
 
-void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheetNum);
-//inputs ordered template for kn so we can output rtk data in same order
-void getFileInput(int numVertices, int numEdges, int numInteriorEdges, EDGE allEDGEs[], EDGE interiorEDGEs[]);
 
-//builds set of edges for complete graph, returns how many generated
-int generateEdges(int numVertices, EDGE allEDGEs[]);
 
-//build set if interior edges for given complete graph, returns how many generated
-int generateInteriorEdges(int numVertices, EDGE allEDGEs[], EDGE interiorEDGEs[]);
 
-//build set of edges needed for RTKFile, so all edges including repetition
-int generateAllRTKEdges(int numVertices, EDGE allRTKEDGEs[]);
-
-//returns true if edges passed are same edge.. true if 1:2 and 2:1 passed, for ex.
-bool determineIfTwoEdgesEquivalent(EDGE a, EDGE b);
-
-//creates RTKFile for interior edges
-//bool generateRTKFileOutput(int numVertices, int numInteriorEdges, EDGE allEDGEs[], EDGE interiorEDGEs[]);
-
-//creates RTKFile for all edges in complete graph, including repetition
-//bool generateRTKFileOutputAllEdges(int numVertices, int numInteriorEdges, EDGE allRTKEDGEs[], EDGE interiorEDGEs[]);
-
-//returns number of interior edges in complete graph
-int calculateNumberOfInteriorEdges(int numVertices);
-
-//returns number of edges in complete graph
-int calculateNumberOfEdges(int numVertices);
-
-//returns true if edges passed intersect
-bool determineIfTwoEdgesIntersect(EDGE a, EDGE b);
-
-//overloaded output operator so we can use cout << to output any edge
-std::ostream& operator << (std::ostream &o, EDGE &a);
-std::ostream& operator << (std::ostream &o, BOOK &a);
-
-/*
-void swap(int *v, const int i, const int j);
-void print(const int *v, const int size);
-void rotateLeft(int *v, const int start, const int n);
-void permute(int *v, const int start, const int n);*/
-
-bool areEmbeddingsEqual(BOOK embedA, BOOK embedB, int sheetNum);
-
-int numVertices, numSheets;
-
-SHEET allMySheets[1000];
-BOOK myEmbeddings[11111];
-BOOK reducedEmbeddings[1500];
 
 list<BOOK*>allEmbeddings;
 list<BOOK*>lessEmbeddings;
 
-int main(int argc, const char * argv[])
-{
-   // int numVertices;
-    int currentSheet;
-    //int numSheets;
-    
-	cout << "This program will generate an rtk .txt file based on" << endl;
-	cout << "a book representation of a complete graph on kn vertices." << endl;
-	cout << "for each interior edge you will be prompted to enter a sheet" << endl;
-	cout << "number. After all edges are assigned the program terminates." << endl;
-	cout << "The file will be in the .exe home dir, under the name RTKFile.txt" << endl;
-    cout << " *Additionally, this code can be used to generate book representations" << endl;
-    cout << "for complete graphs of a given sheet number." << endl << endl;
-     cout << "How many vertices?" << endl;
-     cin >> numVertices;
-     
-     //error catching loop for numvertices, forces user to enter numV value 4-10
-     while(numVertices < 5 || numVertices > 10)
-     {
-         cout << "Invalid number of vertices, valid range is 5-10 inclusive." << endl;
-         cout << "Try again. How many vertices?" << endl;
-         cin >> numVertices;
-     }
-     
-     
-     int numInteriorEdges = calculateNumberOfInteriorEdges(numVertices);
-    
-    //TODO: add method to use what we know about min/max sheet num
-    //      and modify the ranges accordingly
-     cout << "How many sheets?" << endl;
-     cin >> numSheets;
-     
-     //when an invalid sheet num is entered, keep prompting until a valid one is entered
-     while((numSheets > calculateNumberOfInteriorEdges(numVertices)) || (numSheets < 1))
-     {
-         cout << "Invalid sheet number: " << calculateNumberOfInteriorEdges(numVertices) << " is maximum." << endl;
-         cout << "How many sheets?" << endl;
-         cin >> numSheets;
-     }
-     //set of all edges without repetition
-     EDGE allEDGEs[200];
-     //subset of all edges, contains only interior edges
-     EDGE interiorEDGEs[200];
-     //contains all edges in Kn, and includes repetition (1-2 and 2-1 both included)
-     EDGE allRTKEDGEs[200];
-     
-     
-     //this builds the set of all edges
-     generateEdges(numVertices, allEDGEs);
-    //this builds the set of interior edges
-     generateInteriorEdges(numVertices, allEDGEs, interiorEDGEs);
-     
-     bool isValidSheetAssignment;
-     int numEdgesAssigned = 0;
-    char selection;
-    cout << "Would you like to generate embeddings, or manually enter embeddings?";
-    cout << endl << "Enter G to generate, M to manually enter:" << endl;
-    cin >> selection;
-    if((selection != 'M') && (selection != 'm') && (selection != 'G') && (selection != 'g'))
-    {
-        do {
-            cout << endl << "Enter G to generate, M to manually enter:" << endl;
-            cin >> selection;
-        } while ((selection != 'M') && (selection != 'm') && (selection != 'G') && (selection != 'g'));
-        
-    }
-    if(selection == 'M' || selection == 'm')
-    {
-         //continue to prompt for edge assignment until all edges (interior edges) have sheet num
-         while(numEdgesAssigned < numInteriorEdges)
-         {
-             isValidSheetAssignment = true;
-             
-             do
-             {
-                 isValidSheetAssignment = true;
-             
-                 cout << "Enter desired sheet number for: " << interiorEDGEs[numEdgesAssigned].originPoint <<
-                 ":" << interiorEDGEs[numEdgesAssigned].endPoint << endl;
-                 cin >> currentSheet;
-                 //if sheet number is out of valid range based on numSheets, keep asking until valid one entered
-                 while((currentSheet > numSheets) || (currentSheet < 1))
-                 {
-                     cout << "Invalid sheet number. Enter another sheet number: " << endl;
-                     cin >> currentSheet;
-                 }
-                 
-                 
-                 //enumerate through all edges with index lower than current edge
-                 for(int index = 0; index < numEdgesAssigned; index++)
-                 {
-                 //check if any of them have a sheet number equal to current sheet num
-                 if(interiorEDGEs[index].sheetNumber == currentSheet)
-                 //if so, they will be in the same sheet, meaning they can't intersect.. check intersection
-                 if(determineIfTwoEdgesIntersect(interiorEDGEs[index], interiorEDGEs[numEdgesAssigned]))
-                 {
-                 //if intersection occurs, we have invalid sheet assignment
-                 isValidSheetAssignment = false;
-                 //indicate which edges are intersecting
-                 cout << "Intersection: " << interiorEDGEs[index].originPoint << ":" << interiorEDGEs[index].endPoint << " intersects " << interiorEDGEs[numEdgesAssigned].originPoint << ":" << interiorEDGEs[numEdgesAssigned].endPoint << endl <<"Try again!" << endl;
-                 }
-                 }
-                 
-             
-             }while(isValidSheetAssignment == false);
-             
-             //exiting above loop means we have a valid sheet num for current edge, so make assignment..
-             interiorEDGEs[numEdgesAssigned].sheetNumber = currentSheet;
-             
-             //increment counter for edges assigned
-             numEdgesAssigned++;
-         
-         }
-         
-         
-         //this loop builds the set of intersecting edges for each interior edge
-         for(int i = 0; i < numInteriorEdges; i++)
-         {
-         
-             //every time we look at a different interior edge, compare it to all the other
-             //interior edges and see if they intersect. if so, add intersecting edge to list
-             for(int j = 0; j < numInteriorEdges; j++)
-             {
-             
-                 //we don't want to compare the same edge
-                 if(i != j)
-                 {
-                     //do intersection test, if it passes..
-                     if((determineIfTwoEdgesIntersect(interiorEDGEs[i], interiorEDGEs[j])))
-                     // || (determineIfTwoEdgesIntersect(interiorEDGEs[j], interiorEDGEs[i])))
-                     {
-                         //put it in the list
-                         interiorEDGEs[i].intersectingEdges.push_back(&interiorEDGEs[j]);
-                     }
-                 }
-             }
-         }
-         
-         //generateRTKFileOutput(numVertices, numInteriorEdges, allEDGEs, interiorEDGEs);
-         
-         //build the set of edges to be used for RTK output format
-         generateAllRTKEdges(numVertices, allRTKEDGEs);
-         
-         //then, output those edges and their intersections to an output file - deprecated
-         //generateRTKFileOutputAllEdges(numVertices, numInteriorEdges, allRTKEDGEs, interiorEDGEs);
-         
-         //input ordered template for corresponding complete graph
-         getFileInput(numVertices, (numVertices)*(numVertices-1), numInteriorEdges, allRTKEDGEs, interiorEDGEs);
-         
-         
-         
-         ofstream RTKFileOutput1("RTKFile.txt");//file output stream
-         
-         EDGE tempEDGE;//holds the edge we are currently outputting
-         //cycle through all the edges in our rtk edge list..
-         for(int k = 0; k < ((numVertices-1)*numVertices); k++)
-         {
-             //output the edge
-             RTKFileOutput1 << allRTKEDGEs[k].originPoint << ":" << allRTKEDGEs[k].endPoint << " ";
-             //if the list of intersections is empty output a 0
-             if(allRTKEDGEs[k].intersectingEdges.empty())
-             {
-                 RTKFileOutput1 << "0" << endl;
-             }
-             else
-             {
-             //cycle through all elements in the list of intersections for this given edge
-             for(list<EDGE*>::iterator iter = allRTKEDGEs[k].intersectingEdges.begin(), end = allRTKEDGEs[k].intersectingEdges.end();
-             iter != end;
-             ++iter)
-             {
-                 //output a comma if it's not the first item
-                 if(iter != allRTKEDGEs[k].intersectingEdges.begin())
-                     RTKFileOutput1 << ", ";
-                 
-                 //temporarily store edge data of current list item
-                 tempEDGE = **iter;
-                 RTKFileOutput1 << tempEDGE;
-                 
-                 //compare sheet numbers to determine over/under
-                 if(allRTKEDGEs[k].sheetNumber > tempEDGE.sheetNumber)
-                 {
-                     RTKFileOutput1 << "U";
-                 }
-                 else
-                 {
-                     RTKFileOutput1 << "O";
-                 }
-                 
-             }
-             RTKFileOutput1 << endl;
-         }
-         }
-         RTKFileOutput1.close();
-    }
-    else
-    {
-        generateEmbeddingsForGivenSheetNumAndNumVertices(numVertices, numSheets);
-    }
-	//char holdup;
-	//cin >> holdup;
-    
-    return 0;
-}
+int getReadStartPoint(int partitionValue);
+void addSheetsInRangeToArray(int partitionValue);
 
-//////////////////////////////////////////
-///////////Function Definitions///////////
-//////////////////////////////////////////
+void addSheetsInRangeToArray(SHEET iteratingSheets[], int start, int end, int partitionValue);
+void buildSizes();
+void buildSheets(list<EDGE*> validSheets[], int numValidSheets);
+unsigned int count(unsigned int i);
+BOOK createBookFromSheets(SHEET someSheets[], int numSheets);
+void crunchEmbeddingCombinations(SHEET mySheets[], int numValidSheets);
+//bool determineIfValidEmbedding(list<EDGE*> bookRepresentation[], int numSheets);
+bool determineIfValidEmbedding(SHEET bookRepresentation[], int numSheets);
+bool determineIfTwoEdgesEquivalent(EDGE a, EDGE b);
+bool determineIfTwoSheetsAreEqual(SHEET a, SHEET b);
+bool determineIfTwoSheetsCooperate(list<EDGE*> sheetOne, list<EDGE*> sheetTwo);
+void generateSheets(int numVertices, int sheetNum);
+void getIntArrayForMultiDigitInt(int);
+int determineMaxEdgesPerSheet();
+void discardInvalidSheets(list<EDGE*> allSheets[], int sheetCount);
+int calculateNumberOfEdges(int numVertices);
+int calculateNumberOfInteriorEdges(int numVertices);
+bool determineIfTwoEdgesIntersect(EDGE a, EDGE b);
+int generateEdges(int numVertices, EDGE allEDGEs[]);
+int generateInteriorEdges(int numVertices, EDGE allEDGEs[], EDGE interiorEDGEs[]);
+void getUserInput();
+void prepareSheetsArrayForRecursiveIteration();
+bool checkForIntersectionsBetweenEdgeAndSet(EDGE oneEdge, list<EDGE*> setOfEdges);
+std::ostream& operator << (std::ostream &o, SHEET &a);
+std::ostream& operator << (std::ostream &o, BOOK &a);
+std::ostream& operator << (std::ostream &o, EDGE &a);
+std::istream& operator>> (std::istream &in, EDGE &a);
 
-void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheetNum)
+int main (int argc, char *args[])
 {
-    int numInteriorEdges;//, sheetNumMin, sheetNumMax;
     
-    numInteriorEdges = calculateNumberOfInteriorEdges(numVertices);
-    //ofstream RTKFileOutput1("K" + numVertices + "_" + count);//file output stream
-    EDGE allEDGEs[45];
-    EDGE interiorEDGEsForOneGraph[35];
-    
+    getUserInput();
+    maxEdgesPerSheet = determineMaxEdgesPerSheet();
+
+    //prepare edges..
     generateEdges(numVertices, allEDGEs);
     generateInteriorEdges(numVertices, allEDGEs, interiorEDGEsForOneGraph);
+    //array used in partition creation
+    int * a = (int * ) malloc(sizeof(int) * numInteriorEdges);
+    integerPartition (numInteriorEdges, a, 0);
+    totalLevels = numSheets;
+    
+    cout << endl << "Below are the valid partitions for K" << numVertices << " on " << numSheets << " sheets: " << endl;
+    for(int i = 0; i < numValidPartitions; i++)
+    {
+        printf("%d. %d \n", i+1 , validPartitions[i]);
+    }
+    cout << "They all add up to " << numInteriorEdges << ", and have "<< numSheets << " parts." << endl;
+    cout << "Additionally, all integers in partition are <= " << maxEdgesPerSheet << ", the max edges per sheet." << endl;
+
+    generateSheets(numVertices, numSheets);
+    
+    prepareSheetsArrayForRecursiveIteration();
+   
+    return 0;
+} // main
+//==============================================
+//this method outputs the current level of combinations
+void dumpOutputList (int level, int offset)
+{
+    int index;
+    SHEET oneEmbedding[35];
+    totalEmbeddings++;
+    for (index = 0; index < outputCount; ++index)
+    {
+        oneEmbedding[index] = outputList[index];
+        
+    }
+    if(determineIfValidEmbedding(oneEmbedding, numSheets))
+    {
+        
+        for (index = 0; index < outputCount; ++index)
+        {
+            masterSheetList[masterSheetCount + index] = outputList[index];
+            validEmbeddings[validEmbedCount].sheetsInBook.push_back(&masterSheetList[masterSheetCount + index]);
+            fileOutputStream << endl << outputList [index] << "===";
+            masterSheetCount++;
+        }
+
+        
+        fileOutputStream << endl << endl;
+        
+        validEmbedCount++;
+        cout << endl << "valid embeddings: " << validEmbedCount;
+        
+    }
+    
+    
+}
+
+//==============================================
+//returns the index of the current level
+int mapLevelToIndex (int level, int offset)
+{
+    int sum = 0;
+    int index;
+    
+    for (index = 0; index < level; ++index)
+        sum += sizes [index];
+    
+    return (sum+offset);
+}
+
+//==============================================
+//recursively iterates the sheetsForIteration[] structure
+//it combines all the sheets of different sizes with all the
+//other sheets to create our embeddings. must be called after
+//prepareSheetsArrayForRecursiveIteration()
+void iteration (int currentLevel)
+{
+    int index;
+    for (index = 0; index < sizes [currentLevel]; ++index) {
+        
+        outputList [outputCount++] = sheetsForIteration [mapLevelToIndex(currentLevel, index)];
+        if (currentLevel < (totalLevels - 1))
+            iteration (currentLevel+1);
+        else
+            dumpOutputList (currentLevel, index);
+        
+        --outputCount;
+        
+    } // for each one
+    
+}
+
+/*
+ ********************************************************************
+ Author:    Monsi Terdex
+ Below code creates partitions for a given value n. Thanks, Mr. Terdex,
+ ********************************************************************
+ 
+ =====================
+ Routine for printing out array contents
+ =====================
+ */
+void print(int n, int * a) {
+    int i, numValues = 0;
+    std::string oneValue;
+    bool validPartition = true;
+    for (i = 0; i <= n; i++) {
+        if(a[i] > maxEdgesPerSheet)
+        {
+            //break;
+            validPartition = false;
+        }
+        //printf("%d=", a[i]);
+        oneValue += to_string(static_cast<long long>(a[i]));
+        numValues++;
+        
+    }
+    if(numValues == numSheets && validPartition == true)
+    {/*
+        if(validPartition)
+            cout << "validPartition is true.." << endl;
+        else
+            cout << "validPartition is false" << endl;*/
+        validPartitions[numValidPartitions] = std::stoi(oneValue);
+        numValidPartitions++;
+    }
+    printf("\n");
+}
+/*
+ =====================
+ The algorithm
+ =====================
+ */
+void integerPartition(int n, int * a, int level){
+    int first;
+    int i;
+    if (n < 1) return ;
+    a[level] = n;
+    print(level, a);
+   
+    first = (level == 0) ? 1 : a[level-1];
+    for(i = first; i <= n / 2; i++){
+        a[level] = i;
+        integerPartition(n - i, a, level + 1);
+    }
+}
+
+//4 methods below can be used to generate permutations
+//could be used to get all permutations of our partitions
+//currently not implemented
+/*
+void swap(int *v, const int i, const int j)
+{
+    int t;
+    t = v[i];
+    v[i] = v[j];
+    v[j] = t;
+}
+
+void printPerm(const int *v, const int size)
+{
+    if (v != 0) {
+        for (int i = 0; i < size; i++) {
+            printf("%4d", v[i] );
+        }
+        printf("\n");
+    }
+}
+
+void rotateLeft(int *v, const int start, const int n)
+{
+    int tmp = v[start];
+    for (int i = start; i < n-1; i++) {
+        v[i] = v[i+1];
+    }
+    v[n-1] = tmp;
+} // rotateLeft
+
+
+void permute(int *v, const int start, const int n)
+{
+    printPerm(v, n);
+    if (start < n) {
+        int i, j;
+        for (i = n-2; i >= start; i--) {
+            for (j = i + 1; j < n; j++) {
+                swap(v, i, j);
+                permute(v, i+1, n);
+            } // for j
+            rotateLeft(v, i, n);
+        } // for i
+    }
+} // permute*/
+
+//===============================================
+//Methods for embedding generation and validation
+//===============================================
+
+void generateSheets(int numVertices, int sheetNum)
+{
+    //int numInteriorEdges;//, sheetNumMin, sheetNumMax;
+    
+    //numInteriorEdges = calculateNumberOfInteriorEdges(numVertices);
+    //ofstream RTKFileOutput1("K" + numVertices + "_" + count);//file output stream
+    
     
     //this loop builds the set of intersecting edges for each interior edge
     for(int i = 0; i < numInteriorEdges; i++)
@@ -359,18 +341,18 @@ void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheet
                     //put it in the list
                     interiorEDGEsForOneGraph[i].intersectingEdges.push_back(&interiorEDGEsForOneGraph[j]);
                 }
-                else
-                {
-                    interiorEDGEsForOneGraph[i].cooperatingEdges.push_back(&interiorEDGEsForOneGraph[j]);
-                }
+                //else
+                //{
+                 //   interiorEDGEsForOneGraph[i].cooperatingEdges.push_back(&interiorEDGEsForOneGraph[j]);
+                //}
             }
         }
     }
     //determine upper bound of max edges per sheet, can be set manually for more accuracy
-    int maxEdgesPerSheet = determineMaxEdgesPerSheet(interiorEDGEsForOneGraph, numInteriorEdges, sheetNum);//3;
+    //maxEdgesPerSheet = determineMaxEdgesPerSheet();//3;
     
     std::list<EDGE*>oneSheet;
-    std::list<EDGE*> allSheets[200000];
+    std::list<EDGE*> allSheets[10000];
     int sheetCount = 0;
     /* this loop enumerates from 1 to the maximal number of edges in a sheet, and it
      * generates all possible sheets containing that number of edges using the set
@@ -382,7 +364,7 @@ void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheet
     {
         switch(edgesInCurrentSheet)
         {
-            //for instance, this builds all sheets with 1 edge
+                //for instance, this builds all sheets with 1 edge
             case 1:
                 for(int currentEdge = 0; currentEdge < numInteriorEdges; currentEdge++)
                 {
@@ -392,7 +374,7 @@ void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheet
                     sheetCount++;
                 }
                 break;
-            //builds all sheets with 2 edges, etc..
+                //builds all sheets with 2 edges, etc..
             case 2:
                 for(int currentEdgeA = 0; currentEdgeA < numInteriorEdges; currentEdgeA++)
                 {
@@ -433,13 +415,13 @@ void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheet
                         {
                             for(int currentEdgeD = currentEdgeC + 1; currentEdgeD < numInteriorEdges; currentEdgeD++)
                             {
-                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeA]);
-                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeB]);
-                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeC]);
-                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeD]);
-                            allSheets[sheetCount] = oneSheet;
-                            oneSheet.clear();
-                            sheetCount++;
+                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeA]);
+                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeB]);
+                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeC]);
+                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeD]);
+                                allSheets[sheetCount] = oneSheet;
+                                oneSheet.clear();
+                                sheetCount++;
                             }
                         }
                     }
@@ -456,14 +438,14 @@ void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheet
                             {
                                 for(int currentEdgeE = currentEdgeD + 1; currentEdgeE < numInteriorEdges; currentEdgeE++)
                                 {
-                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeA]);
-                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeB]);
-                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeC]);
-                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeD]);
-                                oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeE]);
-                                allSheets[sheetCount] = oneSheet;
-                                oneSheet.clear();
-                                sheetCount++;
+                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeA]);
+                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeB]);
+                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeC]);
+                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeD]);
+                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeE]);
+                                    allSheets[sheetCount] = oneSheet;
+                                    oneSheet.clear();
+                                    sheetCount++;
                                 }
                             }
                         }
@@ -483,15 +465,15 @@ void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheet
                                 {
                                     for(int currentEdgeF = currentEdgeE + 1; currentEdgeF < numInteriorEdges; currentEdgeF++)
                                     {
-                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeA]);
-                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeB]);
-                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeC]);
-                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeD]);
-                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeE]);
-                                    oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeF]);
-                                    allSheets[sheetCount] = oneSheet;
-                                    oneSheet.clear();
-                                    sheetCount++;
+                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeA]);
+                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeB]);
+                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeC]);
+                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeD]);
+                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeE]);
+                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeF]);
+                                        allSheets[sheetCount] = oneSheet;
+                                        oneSheet.clear();
+                                        sheetCount++;
                                     }
                                 }
                             }
@@ -514,16 +496,16 @@ void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheet
                                     {
                                         for(int currentEdgeG = currentEdgeF + 1; currentEdgeG < numInteriorEdges; currentEdgeG++)
                                         {
-                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeA]);
-                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeB]);
-                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeC]);
-                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeD]);
-                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeE]);
-                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeF]);
-                                        oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeG]);
-                                        allSheets[sheetCount] = oneSheet;
-                                        oneSheet.clear();
-                                        sheetCount++;
+                                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeA]);
+                                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeB]);
+                                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeC]);
+                                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeD]);
+                                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeE]);
+                                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeF]);
+                                            oneSheet.push_back(&interiorEDGEsForOneGraph[currentEdgeG]);
+                                            allSheets[sheetCount] = oneSheet;
+                                            oneSheet.clear();
+                                            sheetCount++;
                                         }
                                     }
                                 }
@@ -536,41 +518,27 @@ void generateEmbeddingsForGivenSheetNumAndNumVertices(int numVertices, int sheet
             default:
                 break;
         }
-
+        
     }
     
-
+    
     
     cout << "number of sheets: " << sheetCount << endl;
     discardInvalidSheets(allSheets, sheetCount);
 }
 
 //returns an upper bound for how many edges could be in a sheet
-int determineMaxEdgesPerSheet(EDGE interiorEdges[], int numInteriorEdges, int sheetNum)
+int determineMaxEdgesPerSheet()
 {
-    long maxEdgesPerSheet = 1;
-    //no point in finding sheetNum if it's the numInteriorEdges
-    if(sheetNum == numInteriorEdges)
-        return 1;
-    
-    //this gives us the highest number of edges feasibly possible
-    //in a given sheet, assuming intersections don't happen
-    //we'll then generate such sheets regardless of intersections
-    //and then discard the invalid sheets
-    //return numInteriorEdges - sheetNum + 1;
-    
-    for(int edgeIndex = 0; edgeIndex < numInteriorEdges; edgeIndex++)
-    {
-        //this is how many edges a given edge Cannot be paired with
-        if(interiorEdges[edgeIndex].cooperatingEdges.size() + 1 > maxEdgesPerSheet)
-            maxEdgesPerSheet = interiorEdges[edgeIndex].cooperatingEdges.size() + 1;
-    }
-    return (int)maxEdgesPerSheet;
+ //use what we know about minimal embeddings, or Canonical BR, which have
+        //most edges per sheet possible
+    return numVertices - 2 - 1;
+
 }
 
 //this method iterates over our list of sheets and gets rid of all sheets that
-//contain intersections 
-void discardInvalidSheets(list<EDGE*> allSheets[], int sheetCount)
+//contain intersections
+void discardInvalidSheets(list<EDGE*> allSheets[], int sheetCount) 
 {
     bool discard = false;
     list<EDGE*> validSheets[1000];
@@ -594,7 +562,7 @@ void discardInvalidSheets(list<EDGE*> allSheets[], int sheetCount)
                 ++iter)
             {
                 //if an intersection occurs discard is set to true
-                discard = checkForIntersectionsBetweenEdgeAndSet(**iter, allSheets[currentSheet]); 
+                discard = checkForIntersectionsBetweenEdgeAndSet(**iter, allSheets[currentSheet]);
             }
             if(discard == false)
             {
@@ -612,334 +580,6 @@ void discardInvalidSheets(list<EDGE*> allSheets[], int sheetCount)
     buildSheets(validSheets, numValidSheets);
 }
 
-bool checkForIntersectionsBetweenEdgeAndSet(EDGE oneEdge, list<EDGE*> setOfEdges)
-{
-    for(list<EDGE*>::iterator iter = setOfEdges.begin(),
-        end = setOfEdges.end();
-        iter != end;
-        ++iter)
-    {
-        if(determineIfTwoEdgesIntersect(oneEdge, **iter))
-            return true;
-    }
-    return false;
-    
-}
-
-
-//Output operator for SHEET struct.. allows cout << mySheet
-//to be used.
-std::ostream& operator << (std::ostream &o, SHEET &a)
-{
-    //o << a.edgesInSheet << "-" << a.endPoint;
-    for(list<EDGE*>::iterator iter = a.edgesInSheet.begin(),
-        end = a.edgesInSheet.end();
-        iter != end;
-        ++iter)
-    {
-        o << **iter << endl;
-    }
-    return o;
-}
-
-//Output operator for BOOK struct.. allows cout << myBook
-//to be used.
-std::ostream& operator << (std::ostream &o, BOOK &a)
-{
-    //o << a.edgesInSheet << "-" << a.endPoint;
-    for(list<SHEET*>::iterator iter = a.sheetsInBook.begin(),
-        end = a.sheetsInBook.end();
-        iter != end;
-        ++iter)
-    {
-        o << **iter << endl;
-    }
-    o << "===" << endl;
-    return o;
-}
-
-//Adds information to our array of valid sheets, such as number of edges
-//Then, outputs all of them to a text file. Useful to ensure that the list
-//of sheets you're working with is valid.
-void buildSheets(list<EDGE*> validSheets[], int numValidSheets)
-{
-    SHEET mySheets[1000];
-    for(int i = 0; i < numValidSheets; i++)
-    {
-        mySheets[i].edgesInSheet = validSheets[i];
-        mySheets[i].numEdgesInSheet = (int)validSheets[i].size();
-        //cout << endl << mySheets[i] << endl;
-    }
-
-    ofstream OneSheetOutput ("sheetList.txt");
-    for(int i = 0; i < numValidSheets; i++)
-    {
-        OneSheetOutput << mySheets[i] << endl << endl;
-    }
-    OneSheetOutput.close();
-
-    //we pass our array of valid sheets to this method to combine them in all possible ways
-    crunchEmbeddingCombinations(mySheets, numValidSheets);
-    
-}
-
-//Looks at the edges in two given sheets and checks if any two are the same edge
-bool determineIfTwoSheetsCooperate(list<EDGE*> sheetOne, list<EDGE*> sheetTwo)
-{
-    int firstSize, secondSize;
-    firstSize = (int)sheetOne.size();
-    secondSize = (int)sheetTwo.size();
-    
-
-    
-    for(list<EDGE*>::iterator iterA = sheetOne.begin(),
-        end = sheetOne.end();
-        iterA != end;
-        ++iterA)
-    {
-        for(list<EDGE*>::iterator iterB = sheetTwo.begin(),
-            end = sheetTwo.end();
-            iterB != end;
-            ++iterB)
-        {
-            if(*iterA == *iterB)
-                return false;
-        }
-    }
-    return true;
-    
-
-}
-
-//Checks a given embedding to ensure sheets don't contain the same edges
-bool determineIfValidEmbedding(list<EDGE*> bookRepresentation[], int numSheets)
-{
-    for(int sheetA = 0; sheetA < numSheets-1; sheetA++)
-    {
-        for(int sheetB = sheetA+1; sheetB < numSheets; sheetB++)
-        {
-            if(!determineIfTwoSheetsCooperate(bookRepresentation[sheetA], bookRepresentation[sheetB]))
-                return false;
-        }
-        
-    }
-    return true;
-
-}
-
-
-void crunchEmbeddingCombinations(SHEET mySheets[], int numValidSheets)
-{
-    //We create a linked list of sheets for each possible sheet size
-    //This will have to be modified based on the given complete graph
-    //being evaluated.
-    list<SHEET*>sizeOne;
-    list<SHEET*>sizeTwo;
-    list<SHEET*>sizeThree;
-    list<SHEET*>sizeFour;
-    list<SHEET*>sizeFive;
-    
-    //We create embedding combinations based on how many edges
-    //are present in each sheet
-    for(int index = 0; index < numSheets; index++)
-    {
-        switch(mySheets[index].numEdgesInSheet)
-        {
-            case 1:
-                sizeOne.push_back(&mySheets[index]);
-                break;
-                
-            case 2:
-                sizeTwo.push_back(&mySheets[index]);
-                break;
-                
-            case 3:
-                sizeThree.push_back(&mySheets[index]);
-                break;
-            case 4:
-                sizeFour.push_back(&mySheets[index]);
-                break;
-            case 5:
-                sizeFive.push_back(&mySheets[index]);
-                break;
-        }
-    }
-    
-    list<EDGE*> bookRepresentation[35];
-    ofstream OneSheetOutput;
-    
-    BOOK oneEmbedding;
-    
-    string file_name;
-    BOOK tempEmbedding;
-    
-    //Edit the below string to indicate desired output file name
-    file_name = "2K_6_#4_embedding_#x321_2_apr_numbered"/* + to_string(embeddingCount)*/;
-    OneSheetOutput.open(string(file_name+".txt").c_str());
-    
-    int embeddingCount = 0;
-    SHEET one, two, three, four;
-    
-    //These loops iterate over given sized lists of edges, below loops will create 3-3-2-1 config
-    for(list<SHEET*>::iterator iterA = sizeThree.begin()++++,
-        end = sizeThree.end();
-        iterA != end;
-        ++iterA)
-    {
-    for(list<SHEET*>::iterator iterB = sizeThree.begin()++++,
-        end = sizeThree.end();
-        iterB != end;
-        ++iterB)
-    {
-        for(list<SHEET*>::iterator iterC = sizeTwo.begin()++++,
-            end = sizeTwo.end();
-            iterC != end;
-            ++iterC)
-        {
-            for(list<SHEET*>::iterator iterD = sizeOne.begin(),
-                end = sizeOne.end();
-                iterD != end;
-                ++iterD)
-            {
-                //if(*iterA != NULL)
-                one = **iterA;
-                //if(*iterB != NULL)
-                two = **iterB;
-                //if(*iterC != NULL)
-                three = **iterC;
-                //if(*iterD != NULL)
-                four = **iterD;
-                
-                //this is where we consolidate the sheets into a book rep so we can test its validity
-                bookRepresentation[0] = one.edgesInSheet;
-                bookRepresentation[1] = two.edgesInSheet;
-                bookRepresentation[2] = three.edgesInSheet;
-                bookRepresentation[3] = four.edgesInSheet;
-                
-                //then, we determine its validity
-                if(determineIfValidEmbedding(bookRepresentation, numSheets) == true)
-                {
-                    //if the rep is valid, then we put in our storage
-                    myEmbeddings[embeddingCount].sheetsInBook.push_back(*iterA);
-                    myEmbeddings[embeddingCount].sheetsInBook.push_back(*iterB);
-                    myEmbeddings[embeddingCount].sheetsInBook.push_back(*iterC);
-                    myEmbeddings[embeddingCount].sheetsInBook.push_back(*iterD);
-                    myEmbeddings[embeddingCount].sheetNumber = numSheets;
-
-                    
-                    allEmbeddings.push_back(&myEmbeddings[embeddingCount]);
-                    
-                    //and output it to the file
-                    OneSheetOutput << one << endl << two << endl << three << endl << four;
-                    OneSheetOutput << "===" << endl;
-                    
-                    embeddingCount++;
-                    
-                }
-             
-                
-            }
-        }
-    }
-    }
-    OneSheetOutput << endl << endl << "total: " << embeddingCount;
-    OneSheetOutput.close();
-    
-  
-
-    cout << endl << "total: " << embeddingCount << " embeddings. " << endl;
-
-}
-
-//Evaluates two embeddings and determines if they have the same edges
-//present in the same sheets with the same edge to sheet distribution
-bool areEmbeddingsEqual(BOOK embedA, BOOK embedB, int numSheets)
-{
-    int matches = 0;
-    //bool areEqual = false;
-    BOOK tempA = embedA;
-    BOOK tempB = embedB;
-    for(list<SHEET*>::iterator iterA = tempA.sheetsInBook.begin(),
-        end = tempA.sheetsInBook.end();
-        iterA != end;
-        ++iterA)
-    {
-        
-        for(list<SHEET*>::iterator iterB = tempB.sheetsInBook.begin(),
-            end = tempB.sheetsInBook.end();
-            iterB != end;
-            ++iterB)
-        {
-            if(iterA == iterB)
-            {
-                tempA.sheetsInBook.erase(iterA);
-                tempB.sheetsInBook.erase(iterB);
-                matches++;
-            }
-        }
-    }
-    
-    if(matches == numSheets)
-    {
-        cout << "duplicate" << endl;
-        return true;
-    }
-    else
-        return false;
-}
-
-
-//Determines if the edges from a given sheet can be moved to adjacent sheets
-/*bool canEdgesBeMovedToAdjSheets(SHEET currentSheet, SHEET toLeft, SHEET toRight)
-{
-    char kk;
-    
-    cout << "TESTINGLOLOL" << endl;
-    cout << "L:" << toLeft;
-    cout << endl << currentSheet;
-    cout << endl << "R:" << toRight;
-    for(list<EDGE*>::iterator iterA = currentSheet.edgesInSheet.begin(),
-        end = currentSheet.edgesInSheet.end();
-        iterA != end;
-        ++iterA)
-    {
-        if(canEdgeBeInGivenSheet(**iterA, toLeft))
-        {
-            cout << endl << **iterA << " can be moved to " << toLeft;
-            return true;
-        }
-        else if(canEdgeBeInGivenSheet(**iterA, toRight))
-        {
-            cout << endl << **iterA << " can be moved to " << toRight;
-            return true;
-        }
-        //cin >> kk;
-    }//why is this never returning false..
-    
-    return false;
-}
-*/
-
-
-bool canEdgeBeInGivenSheet(EDGE oneEdge, SHEET destinationSheet)
-{
-    //look through the given sheet at each edge
-    for(list<EDGE*>::iterator iterA = destinationSheet.edgesInSheet.begin(),
-        end = destinationSheet.edgesInSheet.end();
-        iterA != end;
-        ++iterA)
-    {
-        //if an intersection occurs then edge cannot be in said sheet
-        if(determineIfTwoEdgesIntersect(oneEdge, **iterA))
-        {
-            cout << endl << oneEdge << " and " << **iterA << " intersect.";
-            return false;
-        }
-    }
-    //no intersections occurred, edge can be in sheet
-    return true;
-}
-
 //Gives the number of edges present in a given Kn
 int calculateNumberOfEdges(int numVertices)
 {
@@ -948,7 +588,7 @@ int calculateNumberOfEdges(int numVertices)
 	return (n*(n-1))/2;
 }
 //Gives the number of interior edges present in a given Kn
-int calculateNumberOfInteriorEdges(int numVertices)
+int calculateNumberOfInteriorEdges(int numVertices) 
 {
 	int n = numVertices;
     
@@ -976,9 +616,10 @@ bool determineIfTwoEdgesIntersect(EDGE a, EDGE b)
     
 }
 
+
 //fills allEDGEs[] array with values, passed by reference so value isn't returned
 //returns count of edges added for verification
-int generateEdges(int numVertices, EDGE allEDGEs[])
+int generateEdges(int numVertices, EDGE allEDGEs[]) 
 {
     int edgeCount = 0;
     //origin range is from 1 to numVertices (for k5, 1-5)
@@ -999,7 +640,7 @@ int generateEdges(int numVertices, EDGE allEDGEs[])
 //works in conjunction with generateEDGEs, which builds allEDGEs[] first
 //it returns the numInteriorEdges count so we can validate that all were defined
 //keep in mind that allEDGEs edges are always consecutive.. 1:3 exists but not 3:1
-int generateInteriorEdges(int numVertices, EDGE allEDGEs[], EDGE interiorEDGEs[])
+int generateInteriorEdges(int numVertices, EDGE allEDGEs[], EDGE interiorEDGEs[]) 
 {
     int interiorEdgeCount = 0;
     //do this numInteriorEdges number of times
@@ -1018,30 +659,195 @@ int generateInteriorEdges(int numVertices, EDGE allEDGEs[], EDGE interiorEDGEs[]
     return interiorEdgeCount;
 }
 
-//Builds a set of edges required for RTK output format, important distinction
-//is that 2:3 and 3:2 are both represented, for example
-int generateAllRTKEdges(int numVertices, EDGE allRTKEDGEs[])
+//determines if there exist any intersections between a given edge and each
+//edge in a given set
+bool checkForIntersectionsBetweenEdgeAndSet(EDGE oneEdge, list<EDGE*> setOfEdges)
 {
-    int count = 0;
-    //origin points for all edges range from 1-n
-    for(int i = 0; i < numVertices; i++)
+    for(list<EDGE*>::iterator iter = setOfEdges.begin(),
+        end = setOfEdges.end();
+        iter != end;
+        ++iter)
     {
-        
-        //same for end points, except..
-        for(int j = 0; j < numVertices; j++)
+        //intersection found
+        if(determineIfTwoEdgesIntersect(oneEdge, **iter))
+            return true;
+    }
+    return false;
+    
+}
+
+//Output operator for SHEET struct.. allows cout << mySheet
+//to be used.
+std::ostream& operator << (std::ostream &o, SHEET &a)
+{
+    //o << a.edgesInSheet << "-" << a.endPoint;
+    for(list<EDGE*>::iterator iter = a.edgesInSheet.begin(),
+        end = a.edgesInSheet.end();
+        iter != end;
+        ++iter)
+    {
+        o << **iter << endl;
+    }
+    return o;
+}
+
+//Output operator for BOOK struct.. allows cout << myBook
+//to be used.
+std::ostream& operator << (std::ostream &o, BOOK &a) 
+{
+    //o << a.edgesInSheet << "-" << a.endPoint;
+    for(list<SHEET*>::iterator iter = a.sheetsInBook.begin(),
+        end = a.sheetsInBook.end();
+        iter != end;
+        ++iter)
+    {
+        o << **iter << endl;
+    }
+    o << "===" << endl;
+    return o;
+}
+
+//overloading output operator so we can use << operator to output edges
+std::ostream& operator << (std::ostream &o, EDGE &a) 
+{
+    o << a.originPoint << "-" << a.endPoint;
+    return o;
+}
+//overloaded input operator for edge.. not in use currently
+//TODO: implement this for sheets and books and then input
+//generated embeddings and evaluate them in more ways
+std::istream& operator>> (istream &in, EDGE &a)
+{
+    char garbage;
+    in >> a.originPoint;
+    in >>  garbage;
+    in >> a.endPoint;
+    
+    return in;
+}
+
+//Adds information to our array of valid sheets, such as number of edges
+//Then, outputs all of them to a text file. Useful to ensure that the list
+//of sheets you're working with is valid.
+void buildSheets(list<EDGE*> validSheets[], int numValidSheets)
+{
+    //SHEET mySheets[1000];
+    int prevNumEdgesInSheet = 1;
+    for(int i = 0; i < numValidSheets; i++)
+    {
+        allMySheets[i].edgesInSheet = validSheets[i];
+        allMySheets[i].numEdgesInSheet = (int)validSheets[i].size();
+        if(allMySheets[i].numEdgesInSheet == prevNumEdgesInSheet)
         {
-            //they never = the origin, so don't add 1-1 or 2-2, for ex
-            if(j != i)
+            distribution[prevNumEdgesInSheet-1]++;
+        }
+        else
+        {
+            distribution[allMySheets[i].numEdgesInSheet-1]++;
+            prevNumEdgesInSheet++;
+        }
+    }
+    ofstream OneSheetOutput ("sheetList.txt");
+    for(int i = 0; i < numValidSheets; i++)
+    {
+        OneSheetOutput << allMySheets[i] << endl << endl;
+    }
+    OneSheetOutput.close();
+}
+
+//makes sure that no two given sheets in an embedding have the same edges
+bool determineIfValidEmbedding(SHEET bookRepresentation[], int numSheets)
+{
+    SHEET oneSheet;
+    for(int sheetA = 0; sheetA < numSheets-1; sheetA++)
+    {
+        for(int sheetB = sheetA+1; sheetB < numSheets; sheetB++)
+        {
+            //when we find two sheets that have same edges then we know the embedding is invalid
+            if(!determineIfTwoSheetsCooperate(bookRepresentation[sheetA].edgesInSheet, bookRepresentation[sheetB].edgesInSheet))
+                return false;
+        }
+        
+    }
+    //base case, if no other embeddings to compare don't bother
+    if(validEmbeddings == 0)
+        return true;
+    
+    int sheetMatches = 0;
+    //iterate over entire list of all valid embeddings
+    for(int embedding = 0; embedding < validEmbedCount; embedding++)
+    {
+        //looking at every sheet in each book embedding in storage
+        for(list<SHEET*>::iterator iterA = validEmbeddings[embedding].sheetsInBook.begin(),
+            end = validEmbeddings[embedding].sheetsInBook.end();
+            iterA != end;
+            ++iterA)
+        {
+            oneSheet = **iterA;
+            //look at each sheet in the book we want to add to storage
+            for(int sheetA = 0; sheetA < numSheets; sheetA++)
             {
-                allRTKEDGEs[count].originPoint = i+1;
-                allRTKEDGEs[count].endPoint = j+1;
-                count++;
+                
+                if(determineIfTwoSheetsAreEqual(bookRepresentation[sheetA], oneSheet))
+                    ++sheetMatches;
+                
+                
+            }
+            
+        }
+        //cout << sheetMatches << " matches." << endl;
+        if(sheetMatches == numSheets)
+            return false;
+        sheetMatches = 0;
+    }
+    
+    
+    return true;
+    
+}
+
+bool determineIfTwoSheetsAreEqual(SHEET a, SHEET b)
+{
+    //cout << a.edgesInSheet.size() << " and " << b.edgesInSheet.size() << endl;
+    if(a.edgesInSheet.size() != b.edgesInSheet.size())
+    {
+        //cout << "SHEETS INEQUAL SIZE!" << endl;
+        return false;
+    }
+    
+    int matches = 0;
+    
+    
+    //we have to look at the edges in the sheet to know if the sheets are comparable
+    //so, if 2 sheets have the same number of edges, and contain the same edges,
+    //they are equal..
+    for(list<EDGE*>::iterator iterA = a.edgesInSheet.begin(),
+        end = a.edgesInSheet.end();
+        iterA != end;
+        ++iterA)
+    {
+        for(list<EDGE*>::iterator iterB = b.edgesInSheet.begin(),
+            end = b.edgesInSheet.end();
+            iterB != end;
+            ++iterB)
+        {
+            //cout << **iterA << "," << **iterB << endl;
+            if(determineIfTwoEdgesEquivalent(**iterA, **iterB))
+            {
+                matches++;
             }
         }
     }
-    
-    return count;
+    if(matches == (int)a.edgesInSheet.size())
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
+
 //Evaluates two edges and determines if they are the same edge
 bool determineIfTwoEdgesEquivalent(EDGE a, EDGE b)
 {
@@ -1053,158 +859,195 @@ bool determineIfTwoEdgesEquivalent(EDGE a, EDGE b)
         return false;
 }
 
-//overloading output operator so we can use << operator to output edges
-std::ostream& operator << (std::ostream &o, EDGE &a)
+//Looks at the edges in two given sheets and checks if any two are the same edge
+//if they are the same then we know these two sheets can't go together
+bool determineIfTwoSheetsCooperate(list<EDGE*> sheetOne, list<EDGE*> sheetTwo)
 {
-    o << a.originPoint << "-" << a.endPoint;
-    return o;
-}
-//retrieves file input required to generate an ordered rtk file
-//k10 input file is unfinished so k10 rtk files will not be ordered
-void getFileInput(int numVertices, int numEdges, int numInteriorEdges, EDGE allEDGEs[], EDGE interiorEDGEs[])
-{
-	EDGE tempEDGE;
-	int edgeCount = 0;
-    
-    int origin, end;//store current values for origin and end points as we're getting file input
-	ifstream input;// ("K5_input.txt");
-	
-	//determines which input text file to open based on num vertices
-	switch(numVertices)
-	{
-		case 5:
-            input.open("K5_input.txt");
-            break;
-            
-		case 6:
-            input.open("K6_input.txt");
-            break;
-            
-		case 7:
-            input.open("K7_input.txt");
-            break;
-            
-		case 8:
-            input.open("K8_input.txt");
-            break;
-            
-		case 9:
-            input.open("K9_input.txt");
-            break;
-            
-            //k10 input template file isn't complete
-		case 10:
-            input.open("K10_input.txt");
-            cout << endl << "ERROR:Source file for K10 not ordered..." << endl;
-            return;
-            
-		default:
-            cout << endl << "ERROR:Invalid number of vertices. Quitting.." << endl;
-            return;
-            
-	}
-	
-	//cycle through all edges in set of allEDGEs[]
-	for(int i = 0; i < ((numVertices-1)*numVertices); i++)
+    int firstSize, secondSize;
+    firstSize = (int)sheetOne.size();
+    secondSize = (int)sheetTwo.size();
+
+    for(list<EDGE*>::iterator iterA = sheetOne.begin(),
+        end = sheetOne.end();
+        iterA != end;
+        ++iterA)
     {
-        
-        //cycling through all interior edges
-        for(int j = 0; j < numInteriorEdges; j++)
+        for(list<EDGE*>::iterator iterB = sheetTwo.begin(),
+            end = sheetTwo.end();
+            iterB != end;
+            ++iterB)
         {
-            //our set of interiorEdges does not have repeats(includes 3-5 but not 5-3 as well)
-            //so, check each edge from our super set of all edges against each interior edge
-            //and see if we can find an interior edge that it is equal to 1-2 = 1-2 and 2-1, for ex.
-            if(determineIfTwoEdgesEquivalent(allEDGEs[i], interiorEDGEs[j]))
-            {
-                //same edge, so copy sheet number
-                allEDGEs[i].sheetNumber = interiorEDGEs[j].sheetNumber;
-                
-                //we found its equivalent edge so stop looking, move on to next edge
-                break;
-            }
-            
+            if(*iterA == *iterB)
+                return false;
         }
-        //if an edge doesn't have a sheet number at this point it's a non-interior edge
-        //so, we set it to 1
-        if(!allEDGEs[i].sheetNumber)
-            allEDGEs[i].sheetNumber = 1;
     }
-    
-	//string for our stringstream
-    string s;
-    
-    while(getline(input, s)) // fetch each line
+    return true;
+}
+
+//creates a book representation from the array of sheets passed
+BOOK createBookFromSheets(SHEET someSheets[], int numSheets)
+{
+
+    BOOK oneBookEmbedding;
+    for(int index = 0; index < numSheets; index++)
     {
-		cout << endl;
-        stringstream line(s);
-        //as long as current line has integer values..
-        while(line >> origin)
-		{
-			//store 2nd as endpoint
-			line >> end;
-			
-			tempEDGE.originPoint = origin;
-			tempEDGE.endPoint = end;
-			
-			//cout << origin << "-" << end << " ";
-			//cycle trhough all interior edges to find right one, store it in intersections for current edge
-			for(int j = 0; j < numInteriorEdges; j++)
-			{
-				if(determineIfTwoEdgesEquivalent(tempEDGE, interiorEDGEs[j]))
-				{
-					allEDGEs[edgeCount].intersectingEdges.push_back(&interiorEDGEs[j]);
-				}
-			}
-            
-		}
-		//every time we go to a new line we are counting another edge
-		edgeCount++;
+        oneBookEmbedding.sheetsInBook.push_back(&someSheets[index]);
     }
-	//close input stream
-	input.close();
-}
-//Permutation methods, used for generating permutations of sheet distribution partitions
-/*
-void swap(int *v, const int i, const int j)
-{
-    int t;
-    t = v[i];
-    v[i] = v[j];
-    v[j] = t;
+    return oneBookEmbedding;
 }
 
-void print(const int *v, const int size)
+//lets the user enter numVertices and numSheets for given embedding
+void getUserInput()
 {
-    if (v != 0) {
-        for (int i = 0; i < size; i++) {
-            printf("%4d", v[i] );
+    cout << "How many vertices?" << endl;
+    cin >> numVertices;
+    
+    //error catching loop for numvertices, forces user to enter numV value 4-10
+    while(numVertices < 5 || numVertices > 10)
+    {
+        cout << "Invalid number of vertices, valid range is 5-10 inclusive." << endl;
+        cout << "Try again. How many vertices?" << endl;
+        cin >> numVertices;
+    }
+    
+    
+    numInteriorEdges = calculateNumberOfInteriorEdges(numVertices);
+    
+    //TODO: add method to use what we know about min/max sheet num
+    //      and modify the ranges accordingly
+    cout << "How many sheets?" << endl;
+    cin >> numSheets;
+    
+    //when an invalid sheet num is entered, keep prompting until a valid one is entered
+    while((numSheets > calculateNumberOfInteriorEdges(numVertices)) || (numSheets < 1))
+    {
+        cout << "Invalid sheet number: " << calculateNumberOfInteriorEdges(numVertices) << " is maximum." << endl;
+        cout << "How many sheets?" << endl;
+        cin >> numSheets;
+    }
+
+}
+//this turns our stored integer partition into an integer array so we
+//can access each element individually
+void getIntArrayForMultiDigitInt(int onePartition)
+{
+    
+    int sheetNum = numSheets;
+    while (sheetNum--)
+    {
+        onePartitionArray[sheetNum] = onePartition % 10;
+        onePartition /= 10;
+        cout << endl << onePartitionArray[sheetNum];
+        
+    }
+    cout << endl << "Enter any key to continue and begin data generation:";
+    char k; cin >> k;
+}
+//this method creates an array of sheets in the order we need to iterate
+//it recursively. it repeats ranges of sheets as necessary. for instance,
+//for a 11133 embedding for K6 the 9 1 edge sheets to appear 3 times, so
+//they will be the first 27 sheets in the array
+void prepareSheetsArrayForRecursiveIteration()
+{
+    string fileName;
+    ofstream fileOutput;
+
+    
+    cout << "We can only generate one set of embeddings for each session. Select the partition you'd like to generate embeddings for by entering its corresponding number:" << endl;
+    cout << "A .txt file will be created that indicates the number of vertices, sheet number, and partition, e.g. 1233 if working with K_6 on 4 sheets." << endl;
+    cout << "Please enter an integer in the range [1, " << numValidPartitions << "]:" << endl;
+    int selection;
+    //make sure integer is in correct range.. entering a char
+    //that is non-int will make it go bananas more than likely
+    while (true)
+    {
+        cin >> selection;
+        
+        if ((cin) && (selection >= 1) && (selection <= numValidPartitions))
+            break;
+        
+        cin.clear();
+        
+        cout << "Try again: " << endl;
+    }
+    cout << "Great!\nGenerating embeddings in " << validPartitions[selection-1] << ".\n";
+    int index = selection - 1;
+    //for(int index = 0; index < numValidPartitions; index++)
+    //{
+        getIntArrayForMultiDigitInt(validPartitions[index]);
+        for(int partitionIndex = 0; partitionIndex < numSheets; partitionIndex++)
+        {
+            sizes[partitionIndex] = distribution[onePartitionArray[partitionIndex]-1];
+            cout << endl << sizes[partitionIndex];
+            addSheetsInRangeToArray(onePartitionArray[partitionIndex]);
         }
-        printf("\n");
+        
+        //this iterates the sheet data structure each time to create a new
+        //embedding set of a given configuration
+        iteration(0);
+      
+        //handle file output for given embedding config
+        fileName = "K_" + to_string(static_cast<long long>(numVertices)) + "_#" + to_string(static_cast<long long>(numSheets)) + "_" + to_string(static_cast<long long>(validPartitions[index])) + ".txt";
+        //(thanks for not implementing all of the standard c++ to_string overloads, MSVS!)
+		fileOutput.open(fileName.c_str());
+        fileOutput << "K_" << numVertices << " on " << numSheets << " with a " << validPartitions[index]
+                   << " config. There are " << validEmbedCount << " embeddings.";
+        fileOutput << fileOutputStream.str();
+        fileOutput.close();
+    
+    //if we were going to run multiple iterations we'd have to do all this zeroing out
+    //but because of memory issues and other whackiness we'll run 1 at a time..
+        /*
+        fileOutputStream.clear();
+        validEmbedCount = 0;
+        numSheetsForIteration = 0;
+        masterSheetCount = 0;
+    */
+        cout << endl << "Done! Enter any key to quit.." << endl;
+        char k; cin >> k;
+
+        
+    //}
+}
+
+//this method sets up an array with sheets in the order necessary
+//so that they can be traversed by our recursive combination algorithm
+void addSheetsInRangeToArray(int partitionValue)
+{
+    int readStart = getReadStartPoint(partitionValue);
+    
+    for(int i = 0; i < distribution[partitionValue-1]; i++)
+    {
+        sheetsForIteration[numSheetsForIteration] = allMySheets[readStart+i];
+        //cout <<  endl << sheetsForIteration[numSheetsForIteration] << "===";
+        numSheetsForIteration++;
+    }
+    //cout << endl << "==========" << endl;
+    
+}
+
+//returns the index of where the given sheets we want start
+int getReadStartPoint(int partitionValue)
+{
+    int startPoint = 0;
+    //we know that sheets with 1 edge are always first
+    if(partitionValue == 1)
+    {
+        return 0;
+    }
+    //if we are looking for sheets with > 1 edge,
+    //they start at the point where all the sheets
+    //with less edges end
+    else
+    {
+        for(int i = 1; i < partitionValue; i++)
+        {
+            startPoint += distribution[i-1];
+        }
+        return startPoint;
     }
 }
 
-void rotateLeft(int *v, const int start, const int n)
-{
-    int tmp = v[start];
-    for (int i = start; i < n-1; i++) {
-        v[i] = v[i+1];
-    }
-    v[n-1] = tmp;
-} // rotateLeft
 
 
-void permute(int *v, const int start, const int n)
-{
-    print(v, n);
-    if (start < n) {
-        int i, j;
-        for (i = n-2; i >= start; i--) {
-            for (j = i + 1; j < n; j++) {
-                swap(v, i, j);
-                permute(v, i+1, n);
-            } // for j
-            rotateLeft(v, i, n);
-        } // for i
-    }
-} // permute
-*/
+
